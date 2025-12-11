@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EchoSched</title>
+    
+    <!-- PWA Settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#10b981">
+    <link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjoiRWNob1NjaGVkIiwic2hvcnRfbmFtZSI6IkVjaG9TY2hlZCIsInN0YXJ0X3VybCI6Ii4iLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjZmZmZmZmIiwidGhlbWVfY29sb3IiOiIjMTBiOTgxIiwiaWNvbnMiOlt7InNyYyI6Imh0dHBzOi8vY2RuLWljb25zLXBuZy5mbGF0aWNvbi5jb20vNTEyLzIwODcvMjA4NzczNC5wbmciLCJzaXplcyI6IjUxMng1MTIiLCJ0eXBlIjoiaW1hZ2UvcG5nIn1dfQ==">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2087/2087734.png">
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        .animate-slide-up { animation: slideUp 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 selection:bg-green-100 h-screen overflow-hidden">
+
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        // --- DB ENGINE ---
+        const DB_NAME = 'EchoSchedDB_v5';
+        const STORE_NAME = 'files';
+        const dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, 1);
+            request.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
+            request.onsuccess = (e) => resolve(e.target.result);
+            request.onerror = (e) => reject(e);
+        });
+        const saveFileToDB = async (id, file) => {
+            const db = await dbPromise;
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).put(file, id);
+        };
+        const getFileFromDB = async (id) => {
+            const db = await dbPromise;
+            return new Promise((resolve) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const req = tx.objectStore(STORE_NAME).get(id);
+                req.onsuccess = () => resolve(req.result);
+            });
+        };
+
+        // --- ICONS (FIXED VIEWBOXES) ---
+        const Icon = ({ d, className, onClick }) => (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} onClick={onClick}><path d={d} /></svg>
+        );
+        const Icons = {
+            Clock: (p) => <Icon {...p} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 6v6l4 2" />,
+            Calendar: (p) => <Icon {...p} d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />,
+            Users: (p) => <Icon {...p} d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M16 11l2 2 4-4" />,
+            Trash: (p) => <Icon {...p} d="M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />,
+            Settings: (p) => <Icon {...p} d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.72l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" />,
+            Plus: (p) => <Icon {...p} d="M12 5v14M5 12h14" />,
+            X: (p) => <Icon {...p} d="M18 6L6 18M6 6l12 12" />,
+            Check: (p) => <Icon {...p} d="M20 6L9 17l-5-5" />,
+            Send: (p) => <Icon {...p} d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />,
+            Paperclip: (p) => <Icon {...p} d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />,
+            Left: (p) => <Icon {...p} d="M15 18l-6-6 6-6" />,
+            Right: (p) => <Icon {...p} d="M9 18l6-6-6-6" />,
+            Info: (p) => <Icon {...p} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 8h.01M11 12h1v4h1" />,
+            Shield: (p) => <Icon {...p} d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+            FileText: (p) => <Icon {...p} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8" />,
+            LogOut: (p) => <Icon {...p} d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-12-5-5M21 12H9" />,
+            UserPlus: (p) => <Icon {...p} d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M16 11l2 2 4-4" />
+        };
+
+        const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        // --- COMPONENTS ---
+        const Calendar = ({ selectedDate, onChange }) => {
+            const [viewDate, setViewDate] = React.useState(new Date());
+            const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+            const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
+            return (
+                <div className="bg-white rounded-xl border border-gray-100 p-3 mt-2 animate-slide-up">
+                    <div className="flex justify-between items-center mb-2">
+                        <button onClick={() => setViewDate(new Date(viewDate.setMonth(viewDate.getMonth()-1)))} className="p-1"><Icons.Left className="w-4 h-4"/></button>
+                        <span className="font-bold text-sm">{MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}</span>
+                        <button onClick={() => setViewDate(new Date(viewDate.setMonth(viewDate.getMonth()+1)))} className="p-1"><Icons.Right className="w-4 h-4"/></button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                        {WEEKDAYS.map(w => <div key={w} className="text-[10px] text-center text-gray-400 font-bold">{w[0]}</div>)}
+                        {Array(firstDay).fill(null).map((_, i) => <div key={`e-${i}`}></div>)}
+                        {Array(daysInMonth).fill(null).map((_, i) => {
+                            const day = i + 1;
+                            const dStrCheck = new Date(new Date(viewDate.getFullYear(), viewDate.getMonth(), day).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                            return <button key={day} onClick={() => onChange(dStrCheck)} className={`h-8 w-8 rounded-full text-xs font-bold flex items-center justify-center ${selectedDate === dStrCheck ? 'bg-green-600 text-white' : 'hover:bg-gray-100'}`}>{day}</button>
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const getInitials = (name) => name ? name.substring(0, 2).toUpperCase() : "U";
+        const getColor = (name) => ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-yellow-500', 'bg-pink-500'][Math.abs(name.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % 6];
+
+        const ContactBadge = ({ contact, selected, onClick }) => (
+            <div onClick={onClick} className={`flex flex-col items-center p-2 rounded-xl transition-all ${selected ? 'bg-green-100 ring-2 ring-green-500' : 'bg-gray-50'}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${getColor(contact.name)}`}>{getInitials(contact.name)}</div>
+                <span className="text-xs font-medium mt-1 truncate w-16 text-center">{contact.name}</span>
+            </div>
+        );
+
+        // RESTORED SETTINGS ROW UI
+        const SettingsRow = ({ icon, label, onClick }) => (
+            <button onClick={onClick} className="w-full flex items-center p-4 bg-white rounded-xl mb-2 shadow-sm active:scale-95 transition-transform border border-gray-50">
+                <div className="text-gray-500 mr-3">{icon}</div>
+                <span className="flex-1 text-left font-medium text-gray-700">{label}</span>
+                <Icons.Plus className="w-4 h-4 text-gray-300 transform rotate-45" /> 
+            </button>
+        );
+
+        // --- MAIN APP ---
+        const App = () => {
+            const [view, setView] = React.useState('loading'); 
+            const [user, setUser] = React.useState(null);
+            const [contacts, setContacts] = React.useState([]); 
+            const [schedules, setSchedules] = React.useState([]);
+            const [activeNotification, setActiveNotification] = React.useState(null);
+            const [walkthroughIndex, setWalkthroughIndex] = React.useState(0);
+            
+            const [formData, setFormData] = React.useState({
+                message: '', selectedContactIds: [], attachmentId: null, attachmentName: '',
+                frequency: 'once', selectedWeekdays: [], date: new Date().toISOString().split('T')[0],
+                hour: '09', minute: '00', ampm: 'AM'
+            });
+            const fileInputRef = React.useRef(null);
+
+            // --- INITIAL LOAD & AUTH ---
+            React.useEffect(() => {
+                const u = localStorage.getItem('es_user_v5'); // Changed key to force reset
+                const c = localStorage.getItem('es_contacts_v5');
+                const s = localStorage.getItem('es_schedules_v5');
+                if (c) setContacts(JSON.parse(c));
+                if (s) setSchedules(JSON.parse(s));
+                if (u) { setUser(JSON.parse(u)); setView('dashboard'); } 
+                else setView('walkthrough');
+            }, []);
+
+            // --- SCHEDULER ENGINE ---
+            React.useEffect(() => {
+                const interval = setInterval(() => {
+                    if (!user) return;
+                    const now = new Date();
+                    const nowIso = now.toISOString().split('T')[0];
+                    const currentHour = now.getHours() % 12 || 12;
+                    const currentAmpm = now.getHours() >= 12 ? 'PM' : 'AM';
+                    const currentMinute = now.getMinutes();
+                    const currentDay = now.getDay();
+
+                    schedules.forEach(sch => {
+                        if (sch.lastTriggered === `${nowIso}-${now.getHours()}:${now.getMinutes()}`) return;
+                        if (parseInt(sch.hour) !== currentHour || parseInt(sch.minute) !== currentMinute || sch.ampm !== currentAmpm) return;
+
+                        let trigger = false;
+                        if (sch.frequency === 'daily') trigger = true;
+                        if (sch.frequency === 'once' && sch.date === nowIso) trigger = true;
+                        if (sch.frequency === 'weekly' && sch.selectedWeekdays.includes(currentDay)) trigger = true;
+
+                        if (trigger) {
+                            setActiveNotification(sch);
+                            if (Notification.permission === "granted") new Notification("EchoSched: It's Time!", { body: `Send message to ${sch.recipients[0].name}`, vibrate: [200, 100, 200] });
+                            const updated = schedules.map(s => s.id === sch.id ? {...s, lastTriggered: `${nowIso}-${now.getHours()}:${now.getMinutes()}`} : s);
+                            setSchedules(updated);
+                            localStorage.setItem('es_schedules_v5', JSON.stringify(updated));
+                        }
+                    });
+                }, 3000);
+                return () => clearInterval(interval);
+            }, [schedules, user]);
+
+            const handleLogin = (name, phone) => {
+                if (!name.trim() || phone.length < 10) return alert("Valid name and phone required");
+                const u = { name, phone };
+                setUser(u);
+                localStorage.setItem('es_user_v5', JSON.stringify(u));
+                
+                const selfContact = { id: 'self', name: `${name} (You)`, phone: phone };
+                const updatedContacts = [...contacts, selfContact];
+                setContacts(updatedContacts);
+                localStorage.setItem('es_contacts_v5', JSON.stringify(updatedContacts));
+                
+                setView('dashboard');
+                Notification.requestPermission();
+            };
+
+            const addContact = (name, phone) => {
+                if (!name || phone.length < 10) return alert("Valid details required.");
+                const up = [...contacts, { id: Date.now(), name, phone }];
+                setContacts(up);
+                localStorage.setItem('es_contacts_v5', JSON.stringify(up));
+                return true;
+            };
+
+            const handleFile = async (e) => {
+                if (e.target.files[0]) {
+                    const file = e.target.files[0];
+                    const id = `file_${Date.now()}`;
+                    await saveFileToDB(id, file);
+                    setFormData({...formData, attachmentId: id, attachmentName: file.name});
+                }
+            };
+
+            const handleSendMagic = async (contactPhone, msg, attachmentId) => {
+                if (attachmentId && navigator.canShare && navigator.share) {
+                    try {
+                        const file = await getFileFromDB(attachmentId);
+                        if (file) {
+                            await navigator.share({ files: [file], text: msg });
+                            return;
+                        }
+                    } catch (err) { console.log("Share failed, fallback"); }
+                }
+                window.open(`https://wa.me/${contactPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+            };
+
+            const saveSchedule = () => {
+                if (formData.selectedContactIds.length === 0 || !formData.message) return alert("Missing details");
+                const recipients = contacts.filter(c => formData.selectedContactIds.includes(c.id));
+                const newSch = { id: Date.now(), ...formData, recipients, lastTriggered: null };
+                const up = [...schedules, newSch];
+                setSchedules(up);
+                localStorage.setItem('es_schedules_v5', JSON.stringify(up));
+                setView('dashboard');
+                setFormData({...formData, message: '', selectedContactIds: [], attachmentId: null, attachmentName: ''});
+            };
+
+            // --- VIEWS ---
+
+            if (view === 'walkthrough') {
+                const slides = [
+                    { title: "Welcome to EchoSched", desc: "The professional tool for scheduling WhatsApp messages securely on your device.", icon: <Icons.Clock className="w-16 h-16 text-white"/> },
+                    { title: "Attach Anything", desc: "Schedule photos or documents. We'll remind you to send them with one tap.", icon: <Icons.Paperclip className="w-16 h-16 text-white"/> },
+                    { title: "Privacy First", desc: "Your data is stored locally. No servers, no tracking. Designed by Harshil Patel.", icon: <Icons.Shield className="w-16 h-16 text-white"/> }
+                ];
+                return (
+                    <div className="h-screen bg-green-500 flex flex-col justify-center items-center text-white p-8 animate-fade-in relative">
+                        <div className="bg-white/20 p-8 rounded-full mb-8 shadow-inner">{slides[walkthroughIndex].icon}</div>
+                        <h1 className="text-3xl font-bold mb-4 text-center tracking-tight">{slides[walkthroughIndex].title}</h1>
+                        <p className="text-center opacity-90 mb-10 text-lg leading-relaxed">{slides[walkthroughIndex].desc}</p>
+                        <div className="flex space-x-3 mb-10">
+                            {slides.map((_, i) => <div key={i} className={`h-2.5 w-2.5 rounded-full transition-all ${i===walkthroughIndex ? 'bg-white w-8' : 'bg-white/40'}`}></div>)}
+                        </div>
+                        <button onClick={() => {
+                            if (walkthroughIndex < 2) setWalkthroughIndex(walkthroughIndex + 1);
+                            else setView('login');
+                        }} className="bg-white text-green-600 px-10 py-4 rounded-2xl font-bold shadow-xl w-full max-w-xs text-lg active:scale-95 transition-transform">
+                            {walkthroughIndex < 2 ? "Next" : "Get Started"}
+                        </button>
+                    </div>
+                );
+            }
+
+            if (view === 'login') return (
+                <div className="h-screen flex flex-col justify-center px-6 bg-white text-center animate-slide-up">
+                    <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Icons.Clock className="w-12 h-12 text-green-600"/>
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Setup Profile</h1>
+                    <p className="text-gray-500 mb-8 text-sm">We'll save your number so you can schedule test messages to yourself.</p>
+                    <form onSubmit={(e) => { e.preventDefault(); handleLogin(e.target.name.value, e.target.phone.value); }}>
+                        <div className="space-y-4">
+                            <div className="text-left">
+                                <label className="text-xs font-bold text-gray-400 uppercase ml-1">Your Name</label>
+                                <input name="name" placeholder="e.g. Harshil" className="w-full bg-gray-50 p-4 rounded-xl mt-1 border border-gray-100 outline-none font-bold text-gray-800 focus:ring-2 focus:ring-green-500" required/>
+                            </div>
+                            <div className="text-left">
+                                <label className="text-xs font-bold text-gray-400 uppercase ml-1">Phone Number</label>
+                                <input name="phone" type="tel" placeholder="e.g. 15550000" className="w-full bg-gray-50 p-4 rounded-xl mt-1 border border-gray-100 outline-none font-bold text-gray-800 focus:ring-2 focus:ring-green-500" required/>
+                            </div>
+                        </div>
+                        <button className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-xl mt-8 active:scale-95 transition-transform">Complete Setup</button>
+                    </form>
+                </div>
+            );
+
+            if (view === 'create') return (
+                <div className="h-screen bg-gray-50 flex flex-col">
+                    <div className="bg-white p-4 shadow-sm z-10 flex items-center">
+                        <button onClick={() => setView('dashboard')}><Icons.X className="w-6 h-6 text-gray-500"/></button>
+                        <h2 className="ml-4 font-bold text-lg">New Schedule</h2>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        <div className="bg-white p-4 rounded-2xl shadow-sm">
+                            <div className="flex justify-between mb-3">
+                                <span className="text-xs font-bold text-gray-400 uppercase">Send To</span>
+                                <button onClick={() => setView('contacts')} className="text-xs font-bold text-green-600">+ Add Contact</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {contacts.map(c => (
+                                    <button key={c.id} onClick={() => {
+                                        const s = formData.selectedContactIds;
+                                        setFormData({...formData, selectedContactIds: s.includes(c.id) ? s.filter(id=>id!==c.id) : [...s, c.id]})
+                                    }} className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors ${formData.selectedContactIds.includes(c.id) ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                                        {c.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl shadow-sm">
+                            <span className="text-xs font-bold text-gray-400 uppercase">Content</span>
+                            <textarea className="w-full bg-gray-50 p-3 rounded-xl mt-2 h-24 text-sm outline-none resize-none" placeholder="Type message..." value={formData.message} onChange={e => setFormData({...formData, message: e.target.value})}></textarea>
+                            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFile} />
+                            <button onClick={() => fileInputRef.current.click()} className={`w-full mt-3 py-3 border border-dashed rounded-xl flex items-center justify-center text-sm font-bold ${formData.attachmentName ? 'bg-green-50 text-green-700 border-green-200' : 'text-gray-400 border-gray-300'}`}>
+                                <Icons.Paperclip className="w-4 h-4 mr-2"/> {formData.attachmentName || "Attach File (Photo/PDF)"}
+                            </button>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl shadow-sm">
+                            <span className="text-xs font-bold text-gray-400 uppercase">Frequency</span>
+                            <div className="flex bg-gray-100 p-1 rounded-xl mt-2">
+                                {['once', 'daily', 'weekly'].map(f => (
+                                    <button key={f} onClick={() => setFormData({...formData, frequency: f})} className={`flex-1 py-2 text-xs font-bold rounded-lg capitalize ${formData.frequency === f ? 'bg-white shadow text-green-600' : 'text-gray-400'}`}>{f}</button>
+                                ))}
+                            </div>
+                            {formData.frequency === 'once' && <Calendar selectedDate={formData.date} onChange={d => setFormData({...formData, date: d})} />}
+                            {formData.frequency === 'weekly' && (
+                                <div className="flex justify-between mt-4">
+                                    {WEEKDAYS.map((d, i) => (
+                                        <button key={d} onClick={() => {
+                                            const s = formData.selectedWeekdays;
+                                            setFormData({...formData, selectedWeekdays: s.includes(i) ? s.filter(x=>x!==i) : [...s, i]})
+                                        }} className={`w-9 h-9 rounded-full text-xs font-bold ${formData.selectedWeekdays.includes(i) ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-400'}`}>{d[0]}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl shadow-sm flex items-center gap-2">
+                            <select value={formData.hour} onChange={e => setFormData({...formData, hour: e.target.value})} className="bg-gray-50 p-3 rounded-xl font-bold flex-1 text-center outline-none">{[...Array(12).keys()].map(i => <option key={i} value={i===0?12:i<10?`0${i}`:i}>{i===0?12:i<10?`0${i}`:i}</option>)}</select>
+                            <span className="font-bold">:</span>
+                            <select value={formData.minute} onChange={e => setFormData({...formData, minute: e.target.value})} className="bg-gray-50 p-3 rounded-xl font-bold flex-1 text-center outline-none">{Array.from({length: 60}, (_, i) => i < 10 ? `0${i}` : i).map(m => <option key={m} value={m}>{m}</option>)}</select>
+                            <div className="bg-gray-100 p-1 rounded-xl flex">
+                                {['AM', 'PM'].map(p => <button key={p} onClick={() => setFormData({...formData, ampm: p})} className={`px-3 py-2 text-xs font-bold rounded-lg ${formData.ampm === p ? 'bg-white shadow text-green-600' : 'text-gray-400'}`}>{p}</button>)}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-4 bg-white border-t safe-pb">
+                        <button onClick={saveSchedule} className="w-full bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg">Confirm Schedule</button>
+                    </div>
+                </div>
+            );
+
+            if (view === 'contacts') return (
+                <div className="h-screen bg-gray-50 p-6 pt-12 flex flex-col">
+                    <h2 className="text-2xl font-bold mb-4">Add Contact</h2>
+                    <form onSubmit={(e) => {
+                        e.preventDefault();
+                        if(addContact(e.target.n.value, e.target.p.value)) setView('create');
+                    }} className="bg-white p-6 rounded-2xl shadow-sm space-y-4">
+                        <input name="n" placeholder="Name" className="w-full bg-gray-50 p-3 rounded-xl outline-none" required/>
+                        <input name="p" type="tel" placeholder="Phone" className="w-full bg-gray-50 p-3 rounded-xl outline-none" required/>
+                        <button className="w-full bg-green-600 text-white font-bold py-3 rounded-xl">Save</button>
+                        <button type="button" onClick={() => setView('create')} className="w-full text-gray-400 font-bold py-2">Cancel</button>
+                    </form>
+                </div>
+            );
+
+            if (view === 'menu') return (
+                <div className="h-screen bg-gray-50 flex flex-col">
+                    <div className="bg-white p-4 flex items-center shadow-sm z-10">
+                        <button onClick={() => setView('dashboard')} className="mr-4"><Icons.X className="w-6 h-6 text-gray-500"/></button>
+                        <h2 className="font-bold text-lg">Settings</h2>
+                    </div>
+                    <div className="p-4 space-y-2">
+                        <div className="bg-white p-4 rounded-xl mb-4 shadow-sm flex items-center border border-gray-100">
+                            <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center text-green-600 font-bold text-xl mr-4">{getInitials(user?.name)}</div>
+                            <div>
+                                <h3 className="font-bold text-xl text-gray-800">{user?.name}</h3>
+                                <p className="text-sm text-gray-500">{user?.phone}</p>
+                            </div>
+                        </div>
+                        
+                        <h3 className="text-xs font-bold text-gray-400 uppercase ml-2 mb-1 mt-4">General</h3>
+                        <SettingsRow icon={<Icons.UserPlus className="w-5 h-5"/>} label="Add Contact" onClick={() => setView('contacts')} />
+                        <SettingsRow icon={<Icons.Info className="w-5 h-5"/>} label="About Us" onClick={() => setView('about')} />
+                        <SettingsRow icon={<Icons.Shield className="w-5 h-5"/>} label="Privacy Policy" onClick={() => setView('privacy')} />
+                        <SettingsRow icon={<Icons.FileText className="w-5 h-5"/>} label="Terms & Conditions" onClick={() => setView('terms')} />
+                        
+                        <button onClick={() => {localStorage.removeItem('es_user_v5'); setUser(null); setView('login');}} className="w-full flex items-center justify-center p-4 bg-red-50 text-red-600 rounded-xl mt-8 font-bold shadow-sm active:scale-95 transition-transform">
+                            <Icons.LogOut className="w-5 h-5 mr-2"/> Log Out
+                        </button>
+                    </div>
+                </div>
+            );
+
+            // --- LEGAL PAGES ---
+            const LegalPage = ({ title, children }) => (
+                <div className="h-screen bg-white flex flex-col">
+                    <div className="p-4 flex items-center border-b border-gray-100 shadow-sm sticky top-0 bg-white z-10">
+                        <button onClick={() => setView('menu')} className="mr-4"><Icons.X className="w-6 h-6 text-gray-500"/></button>
+                        <h2 className="font-bold text-lg">{title}</h2>
+                    </div>
+                    <div className="p-6 overflow-y-auto pb-20 prose prose-gray max-w-none">
+                        {children}
+                    </div>
+                </div>
+            );
+
+            if (view === 'about') return (
+                <LegalPage title="About Us">
+                    <div className="text-center mb-8 mt-4">
+                        <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Icons.Clock className="w-12 h-12 text-green-600"/>
+                        </div>
+                        <h1 className="text-2xl font-bold text-gray-900">EchoSched</h1>
+                        <p className="text-sm text-gray-500 font-medium">Version 5.0.0 (Ultimate)</p>
+                    </div>
+                    <div className="space-y-4 text-gray-700">
+                        <p><strong>EchoSched</strong> is the world's most intuitive message scheduling utility, designed to bridge the gap between intention and action. Never miss a birthday, meeting reminder, or a simple "Good Morning" again.</p>
+                        <hr className="border-gray-100"/>
+                        <h3 className="text-lg font-bold text-gray-900">The Visionary</h3>
+                        <p>This application was conceptualized, designed, and brought to life by <strong>Harshil Patel</strong>. His vision was to create a tool that respects user privacy while offering powerful automation capabilities right from the browser.</p>
+                        <hr className="border-gray-100"/>
+                        <h3 className="text-lg font-bold text-gray-900">Contact</h3>
+                        <p>For support or inquiries, please contact the development team.</p>
+                        <p className="text-xs text-gray-400 mt-8 text-center">© 2025 Harshil Patel. All Rights Reserved.</p>
+                    </div>
+                </LegalPage>
+            );
+
+            if (view === 'privacy') return (
+                <LegalPage title="Privacy Policy">
+                    <div className="space-y-4 text-gray-700">
+                        <p className="font-bold">Effective Date: December 11, 2025</p>
+                        <p>At EchoSched, we believe your data belongs to you. We have adopted a strict <strong>Local-First Architecture</strong>.</p>
+                        
+                        <h3 className="text-lg font-bold text-gray-900">1. Data Storage</h3>
+                        <p>All your schedules, contact names, phone numbers, and attached files are stored securely within your device's <strong>IndexedDB</strong> and <strong>LocalStorage</strong>. We do not operate a cloud database. If you delete this app or clear your browser data, your information is wiped instantly.</p>
+
+                        <h3 className="text-lg font-bold text-gray-900">2. File Handling</h3>
+                        <p>When you attach a file, it is saved strictly to your device's browser sandbox. It is only accessed when you explicitly click "Share" to send it via WhatsApp.</p>
+
+                        <h3 className="text-lg font-bold text-gray-900">3. Permissions</h3>
+                        <ul className="list-disc pl-5 space-y-2">
+                            <li><strong>Notifications:</strong> Required solely to alert you at the scheduled time.</li>
+                            <li><strong>Storage:</strong> Required to persist your schedules across sessions.</li>
+                        </ul>
+                    </div>
+                </LegalPage>
+            );
+
+            if (view === 'terms') return (
+                <LegalPage title="Terms & Conditions">
+                    <div className="space-y-4 text-gray-700">
+                        <p>By accessing EchoSched, you agree to these terms.</p>
+                        
+                        <h3 className="text-lg font-bold text-gray-900">1. Acceptable Use</h3>
+                        <p>EchoSched is a productivity tool. You allow us to facilitate message scheduling. You agree NOT to use this tool for spam, harassment, or sending unsolicited bulk messages.</p>
+
+                        <h3 className="text-lg font-bold text-gray-900">2. Limitation of Liability</h3>
+                        <p><strong>Harshil Patel</strong> and the EchoSched team act as a utility provider. We are not responsible for missed messages due to device battery optimization, Do Not Disturb modes, or browser background restrictions.</p>
+
+                        <h3 className="text-lg font-bold text-gray-900">3. Third-Party Services</h3>
+                        <p>This app interacts with WhatsApp via public APIs. We are not affiliated with Meta or WhatsApp Inc.</p>
+                    </div>
+                </LegalPage>
+            );
+
+            // Dashboard
+            return (
+                <div className="h-screen bg-gray-50 flex flex-col">
+                    <div className="bg-white px-6 pt-12 pb-4 shadow-sm flex justify-between items-center z-10">
+                        <h1 className="text-xl font-bold text-green-600">EchoSched</h1>
+                        <button onClick={() => setView('menu')}><Icons.Settings className="w-6 h-6 text-gray-400"/></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        <div className="flex justify-between items-end mb-2">
+                            <h2 className="text-2xl font-bold text-gray-800">My Schedules</h2>
+                            <span className="text-xs font-bold bg-green-100 text-green-600 px-2 py-1 rounded-full">{schedules.length} Active</span>
+                        </div>
+
+                        {schedules.length === 0 ? (
+                            <div className="text-center py-20 opacity-40">
+                                <Icons.Clock className="w-16 h-16 mx-auto mb-4"/>
+                                <p>No schedules active</p>
+                            </div>
+                        ) : (
+                            schedules.map(s => (
+                                <div key={s.id} className="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-green-500">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <h3 className="font-bold text-lg">{s.recipients.map(r=>r.name).join(', ')}</h3>
+                                            <div className="text-xs text-green-600 font-bold bg-green-50 px-2 py-1 rounded w-fit mt-1 uppercase">{s.frequency} • {s.hour}:{s.minute} {s.ampm}</div>
+                                        </div>
+                                        <button onClick={() => {
+                                            const up = schedules.filter(x => x.id !== s.id);
+                                            setSchedules(up);
+                                            localStorage.setItem('es_schedules_v5', JSON.stringify(up));
+                                        }} className="text-gray-300 hover:text-red-500"><Icons.Trash className="w-5 h-5"/></button>
+                                    </div>
+                                    <p className="text-gray-500 text-sm truncate">"{s.message}"</p>
+                                    {s.attachmentName && <div className="mt-2 text-xs font-bold text-blue-500 flex items-center"><Icons.Paperclip className="w-3 h-3 mr-1"/> {s.attachmentName}</div>}
+                                </div>
+                            ))
+                        )}
+                        <div className="h-24"></div>
+                    </div>
+                    <div className="fixed bottom-6 right-6 safe-pb">
+                        <button onClick={() => setView('create')} className="bg-gray-900 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-105 transition-all"><Icons.Plus className="w-6 h-6"/></button>
+                    </div>
+
+                    {activeNotification && (
+                        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6 animate-slide-up backdrop-blur-sm">
+                            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                                <div className="text-center">
+                                    <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><Icons.Clock className="w-8 h-8 text-white"/></div>
+                                    <h2 className="text-xl font-bold text-gray-900">It's Time!</h2>
+                                    <p className="text-gray-500 text-sm mb-6">Scheduled for {activeNotification.hour}:{activeNotification.minute} {activeNotification.ampm}</p>
+                                    {activeNotification.attachmentName && (
+                                        <div className="bg-blue-50 text-blue-700 p-3 rounded-xl mb-4 text-sm font-bold flex items-center justify-center border border-blue-100"><Icons.Paperclip className="w-4 h-4 mr-2"/> Includes: {activeNotification.attachmentName}</div>
+                                    )}
+                                    <div className="space-y-3">
+                                        {activeNotification.recipients.map(r => (
+                                            <button key={r.id} onClick={() => handleSendMagic(r.phone, activeNotification.message, activeNotification.attachmentId)} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center hover:bg-green-700">
+                                                <Icons.Send className="w-4 h-4 mr-2"/> Send to {r.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => setActiveNotification(null)} className="mt-6 text-gray-400 font-bold text-sm">Dismiss</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
